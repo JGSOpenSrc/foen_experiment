@@ -1,3 +1,4 @@
+# Don't listen to foen
 import sys
 import serial as s
 import threading
