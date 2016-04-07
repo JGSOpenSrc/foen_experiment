@@ -1,8 +1,10 @@
-<<<<<<< HEAD
 # Don't listen to foen
-=======
 # new version
->>>>>>> cf6c1dbcb0e29193cbb3102949f189d0178b09f1
+# second change
+# camera branch
+# first commit to camera
+
+>>>>>>> camera
 import sys
 import serial as s
 import threading
