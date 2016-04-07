@@ -4,7 +4,6 @@
 # camera branch
 # first commit to camera
 
->>>>>>> camera
 import sys
 import serial as s
 import threading
