@@ -27,8 +27,8 @@ unsigned int timer1_timeout;
 unsigned int tbase1 = 0;                                        // Counter variable, increments at SYS_TBASE1_FREQ
 unsigned int lastTime1 = 0;                                     // lastTime variables update each time loop() sees a change in tbase
 
-int x = 0; 
-int y = 0; 
+int x = 0;
+int y = 0;
 int z = 0;
 int irVal = 0;
 char input_buffer[BUFFER_LEN];                                  // Serial input buffer, used to store serial data and to parse commands.
@@ -45,17 +45,17 @@ void sendNectarData();
 void determineFlowerState();
 
 void setup() {
-  
+
   // initialize message buffer
   int i;
 
   // Setup Serial Port to run at 1MHz
   UART_INIT(0x01);
 //  Serial.begin(115200);
-  
+
   // Initialize the IO ports
   IO_INIT();
-  
+
   // Iinitialize analog to digital conversion
   ADC_INIT();
 
@@ -69,7 +69,7 @@ void setup() {
   // Initialize Counter 1, used to synchronize tasks
   timer1_timeout = SYS_CLK_FREQ / (1 * tbase1_freq) - 1;          // Timeout value is used to set sampling rate
   TIMER_INIT(timer1_timeout);
-  debugFlag = false;  
+  debugFlag = false;
   sei();                                                          // Enable interrupts
 }
 
@@ -83,7 +83,7 @@ ISR(TIMER1_COMPA_vect) {
 
 /* This function initializes the UART. It configures the data frame for 8-bits,
 1 stop bit, and no parity. The baudrate is adjusted by setting the double speed
-bit (U2X0). The effective baudrate is 16MHz/8/(ubrr+1). 
+bit (U2X0). The effective baudrate is 16MHz/8/(ubrr+1).
 */
 void UART_INIT(unsigned int ubrr){
   Serial.begin(9600);
@@ -98,13 +98,13 @@ void IO_INIT(){
   // Used to trigger microinjector
   pinMode(INJECTION_TRIGGER_PIN, OUTPUT);
   digitalWrite(INJECTION_TRIGGER_PIN, HIGH);
-  
+
   // Used to force the injector into reset
   pinMode(INJECTOR_RST_PIN, OUTPUT);
   digitalWrite(INJECTOR_RST_PIN, LOW);
   delay(1);
   digitalWrite(INJECTOR_RST_PIN, HIGH);
-  
+
   // Used to measure the system frequency
   pinMode(DEBUG_PIN, OUTPUT);
 
@@ -122,7 +122,7 @@ delay. You probably won't have to change any of this code. If you wish to adjust
 frequency of the system, simply change the TIMER1_TIMEOUT function.
 */
 void TIMER_INIT(unsigned int timeout){
-  TCCR1A = 0x00;                                                // Configure the timer to run in normal mode                                        
+  TCCR1A = 0x00;                                                // Configure the timer to run in normal mode
   TCCR1B = (1<<CS10);
   TIMSK1 = 0;
   TIMSK1 |= (1<<OCIE1A);                                        // Enable output compare interrupt
@@ -133,7 +133,7 @@ void TIMER_INIT(unsigned int timeout){
 }
 
 /* This function initializes the analog to digital converter.
-If a different configuration is required, consult the atmega328p 
+If a different configuration is required, consult the atmega328p
 datasheet under the ADC chapter */
 void ADC_INIT(){
   ADCSRA &= 0x00;
@@ -147,15 +147,15 @@ void ADC_INIT(){
  * It reads from the serial port until a newline terminator is found.
  * Exit code 0:  success
  * Exit code 1:  no data avaialable
- * Exit code -1: buffer overflow 
+ * Exit code -1: buffer overflow
  */
 int getcmd(char* input_buffer){
   int exitcode;
   bool done = false;
   char* ptr = input_buffer;
   if(!Serial.available()){                                        // No data avialable, return exit code 1.
-    exitcode = 1; 
-  } 
+    exitcode = 1;
+  }
   else {
     while(!done){                                                 // Read bytes until null terminator received.
       if(Serial.available()){
@@ -166,7 +166,7 @@ int getcmd(char* input_buffer){
           exitcode = 0;
         }
         ptr++;
-      } 
+      }
       if(input_buffer + BUFFER_LEN < ptr){
         done = true;
         exitcode = -1;
@@ -201,17 +201,17 @@ void sample_send_x(){
     ADMUX = (1<<REFS0) | (1<<ADLAR) | ACCEL_X_PIN;
     ADCSRA |= (1<<ADSC);
     while(ADCSRA & (1<<ADSC));
-    
+
     // Send code for X DATA
     UDR0 = 'X';
     while(!(UCSR0A&(1<<TXC0)));
     UCSR0A |= (1<<TXC0);
-    
+
     // Send value read on x pin
     UDR0 = ADCH;
     while(!(UCSR0A&(1<<TXC0)));
     UCSR0A |= (1<<TXC0);
-    
+
     // Send time stamp
     UDR0 = (unsigned char)tbase1;
     while(!(UCSR0A&(1<<TXC0)));
@@ -230,18 +230,18 @@ void sample_send_y(){
     ADMUX = (1<<REFS0) | (1<<ADLAR) | ACCEL_Y_PIN;
     ADCSRA |= (1<<ADSC);
     while(ADCSRA & (1<<ADSC));
-    
+
     // Send code for Y DATA
     UDR0 = 'Y';
     while(!(UCSR0A&(1<<TXC0)));
     UCSR0A |= (1<<TXC0);
-    
+
     // Send value read on x pin
     UDR0 = ADCH;
     while(!(UCSR0A&(1<<TXC0)));
     UCSR0A |= (1<<TXC0);
-    
-    
+
+
     // Send time stamp
     UDR0 = (unsigned char)tbase1;
     while(!(UCSR0A&(1<<TXC0)));
@@ -260,17 +260,17 @@ void sample_send_z(){
     ADMUX = (1<<REFS0) | (1<<ADLAR) | ACCEL_Z_PIN;
     ADCSRA |= (1<<ADSC);
     while(ADCSRA & (1<<ADSC));
-    
+
     // Send code for X DATA
     UDR0 = 'Z';
     while(!(UCSR0A&(1<<TXC0)));
     UCSR0A |= (1<<TXC0);
-    
+
     // Send value read on x pin
     UDR0 = ADCH;
     while(!(UCSR0A&(1<<TXC0)));
     UCSR0A |= (1<<TXC0);
-    
+
     // Send time stamp
     UDR0 = (unsigned char)tbase1;
     while(!(UCSR0A&(1<<TXC0)));
@@ -290,19 +290,19 @@ void sample_send_n(){
       ADMUX = (1<<REFS0) | (1<<ADLAR) | LIQUID_SENSE_PIN;
       ADCSRA |= (1<<ADSC);
       while(ADCSRA & (1<<ADSC));
-      
+
       // Send code for N DATA
       UDR0 = 'N';
       while(!(UCSR0A&(1<<TXC0)));
       UCSR0A |= (1<<TXC0);
-      
+
       // Send value read on nectar pin
       irVal = ADCH;
       UDR0 = irVal;
       while(!(UCSR0A&(1<<TXC0)));
       UCSR0A |= (1<<TXC0);
-      
-      
+
+
       // Send time stamp
       UDR0 = (unsigned char)tbase1;
       while(!(UCSR0A&(1<<TXC0)));
@@ -315,5 +315,3 @@ void sample_send_n(){
       */
   }
 }
-
-
