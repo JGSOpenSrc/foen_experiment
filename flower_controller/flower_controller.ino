@@ -23,18 +23,9 @@ bool isEmpty;
 bool debugFlag;
 
 unsigned int tbase1_freq;
-unsigned int tbase2_freq;
-unsigned int tbase3_freq = 1;
 unsigned int timer1_timeout;
 unsigned int tbase1 = 0;                                        // Counter variable, increments at SYS_TBASE1_FREQ
-unsigned int tbase2 = 0;                                        // Counter variable, increments at SYS_TBASE2_FREQ
-unsigned int tbase3 = 0;                                        // Counter variable, increments at SYS_TBASE3_FREQ
 unsigned int lastTime1 = 0;                                     // lastTime variables update each time loop() sees a change in tbase
-unsigned int lastTime2 = 0;
-unsigned int lastTime3 = 0;
-unsigned int tLatch1 = 0;                                       // tLatch variables are used to implement time delays
-unsigned int tLatch2 = 0;
-unsigned int tLatch3 = 0;
 
 int x = 0; 
 int y = 0; 
@@ -60,6 +51,7 @@ void setup() {
 
   // Setup Serial Port to run at 1MHz
   UART_INIT(0x01);
+//  Serial.begin(115200);
   
   // Initialize the IO ports
   IO_INIT();
@@ -67,42 +59,12 @@ void setup() {
   // Iinitialize analog to digital conversion
   ADC_INIT();
 
-  // Initialize motor
-  int avg = 0;                                                  // Initialize Nectar container state
-  for(i = 0; i < 10; i++){
-    avg += analogRead(LIQUID_SENSE_PIN);
-  }
-  if (LOW_TO_HIGH < (avg / 10)){
-    isEmpty = true;
-    Serial.println("Container is initially empty");
-    sprintf(output_buffer, "average value read is %d", avg / 10);
-    Serial.println(output_buffer);
-  }
-  else if (HIGH_TO_LOW > (avg / 10)){
-    isEmpty = false;
-    Serial.println("Container is initially full");
-    sprintf(output_buffer, "average value read is %d", avg / 10);
-    Serial.println(output_buffer);
-  } 
-  else {
-    Serial.println("Container state unknown!");
-    sprintf(output_buffer, "average value read is %d", avg / 10);
-    Serial.println(output_buffer);
-    //while(1);                                                    // Loop forever, something is wrong!
-  }
-
   int exitcode = 0;
   /* Wait for accellerometer sample rate */
   do {
     exitcode = getcmd(input_buffer);
   } while(0 != exitcode);
   tbase1_freq = 4 * atoi(input_buffer);
-  
-  /* Wait for nectar sample rate */;
-  do{
-    exitcode = getcmd(input_buffer);
-  } while(0 != exitcode);
-  tbase2_freq = atoi(input_buffer);
 
   // Initialize Counter 1, used to synchronize tasks
   timer1_timeout = SYS_CLK_FREQ / (1 * tbase1_freq) - 1;          // Timeout value is used to set sampling rate
@@ -116,14 +78,6 @@ ISR(TIMER1_COMPA_vect) {
   TCNT1 = 0;
   TIFR1 |= 0xFF;
   tbase1++;
-  if(tLatch1 + (tbase1_freq / tbase2_freq) == tbase1){
-    tLatch1 = tbase1;
-    tbase2++;
-    if(tLatch2 + (tbase2_freq / tbase3_freq) == tbase2){
-      tLatch2 = tbase2;
-      tbase3++;
-    }
-  }
   sei();
 }
 
@@ -237,8 +191,6 @@ void loop() {
    sample_send_y();
    sample_send_z();
    sample_send_n();
-   check_volume();
-   inject();
   }
 }
 
@@ -264,11 +216,12 @@ void sample_send_x(){
     UDR0 = (unsigned char)tbase1;
     while(!(UCSR0A&(1<<TXC0)));
     UCSR0A |= (1<<TXC0);
-    
+    /*
     // Send stop byte
     UDR0 = '\n';
     while(!(UCSR0A&(1<<TXC0)));
     UCSR0A |= (1<<TXC0);
+    */
   }
 }
 void sample_send_y(){
@@ -288,15 +241,17 @@ void sample_send_y(){
     while(!(UCSR0A&(1<<TXC0)));
     UCSR0A |= (1<<TXC0);
     
+    
     // Send time stamp
     UDR0 = (unsigned char)tbase1;
     while(!(UCSR0A&(1<<TXC0)));
     UCSR0A |= (1<<TXC0);
-    
+    /*
     // Send stop byte
     UDR0 = '\n';
     while(!(UCSR0A&(1<<TXC0)));
     UCSR0A |= (1<<TXC0);
+    */
   }
 }
 void sample_send_z(){
@@ -320,16 +275,16 @@ void sample_send_z(){
     UDR0 = (unsigned char)tbase1;
     while(!(UCSR0A&(1<<TXC0)));
     UCSR0A |= (1<<TXC0);
-    
+    /*
     // Send stop byte
     UDR0 = '\n';
     while(!(UCSR0A&(1<<TXC0)));
     UCSR0A |= (1<<TXC0);
+    */
   }
 }
 void sample_send_n(){
-  if(3 == (tbase1 % 4) && (tbase2 != lastTime2)){
-    if(!(tbase2 % tbase3_freq)){
+  if(3 == (tbase1 % 4)){
       sampleNectar = false;
       // Sample nectar
       ADMUX = (1<<REFS0) | (1<<ADLAR) | LIQUID_SENSE_PIN;
@@ -347,99 +302,17 @@ void sample_send_n(){
       while(!(UCSR0A&(1<<TXC0)));
       UCSR0A |= (1<<TXC0);
       
+      
       // Send time stamp
-      UDR0 = (unsigned char)tbase2;
+      UDR0 = (unsigned char)tbase1;
       while(!(UCSR0A&(1<<TXC0)));
       UCSR0A |= (1<<TXC0);
-    
+      /*
       // Send stop byte
       UDR0 = '\n';
       while(!(UCSR0A&(1<<TXC0)));
       UCSR0A |= (1<<TXC0);
-    }
-  }
-}
-void check_volume(){
-  if((3 == tbase1 % 4) && (tbase2 != lastTime2)){
-    lastTime2 = tbase2;
-    if(!isEmpty && (irVal > LOW_TO_HIGH)){ 
-      isEmpty = true;
-      tLatch3 = tbase3;
-      // Code for nectar volume event
-      UDR0 = 'E';
-      while(!(UCSR0A&(1<<TXC0)));
-      UCSR0A |= (1<<TXC0);
-      
-      // Send 0 signalling empty
-      UDR0 = 0;
-      while(!(UCSR0A&(1<<TXC0)));
-      UCSR0A |= (1<<TXC0);
-      
-      // Send timestamp
-      UDR0 = (unsigned char)tbase3;
-      while(!(UCSR0A&(1<<TXC0)));
-      UCSR0A |= (1<<TXC0);
-      
-      // Send stop byte
-      UDR0 = '\n';
-      while(!(UCSR0A&(1<<TXC0)));
-      UCSR0A |= (1<<TXC0);
-    }
-    else if (isEmpty && (irVal < HIGH_TO_LOW)){
-      isEmpty = false;
-      // Code for nectar volume event
-      UDR0 = 'E';
-      while(!(UCSR0A&(1<<TXC0)));
-      UCSR0A |= (1<<TXC0);
-      
-      // Send 0 signalling full
-      UDR0 = 1;
-      while(!(UCSR0A&(1<<TXC0)));
-      UCSR0A |= (1<<TXC0);
-      
-      // Send timestamp
-      UDR0 = (unsigned char)tbase3;
-      while(!(UCSR0A&(1<<TXC0)));
-      UCSR0A |= (1<<TXC0);
-      
-      // Send stop byte
-      UDR0 = '\n';
-      while(!(UCSR0A&(1<<TXC0)));
-      UCSR0A |= (1<<TXC0);
-    }
-  }
-}
-void inject(){
-  if((3 == tbase1 % 4)){
-     if(tbase3 != lastTime3){
-       lastTime3 = tbase3;
-       if (isEmpty && (tbase3 == tLatch3 + INJECTION_DELAY)) {
-        // Request injection from microinjector
-        digitalWrite(INJECTION_TRIGGER_PIN, LOW);
-        digitalWrite(INJECTION_TRIGGER_PIN, HIGH);
-        tLatch3 = tbase3;
-        
-        //Send injection event code
-        UDR0 = 'I';
-        while(!(UCSR0A&(1<<TXC0)));
-        UCSR0A |= (1<<TXC0);
-        
-        // Send null byte
-        UDR0 = 0x00;
-        while(!(UCSR0A&(1<<TXC0)));
-        UCSR0A |= (1<<TXC0);
-        
-        // Send time stamp
-        UDR0 = (unsigned char)tbase3;
-        while(!(UCSR0A&(1<<TXC0)));
-        UCSR0A |= (1<<TXC0);
-        
-        // Send stop byte
-        UDR0 = '\n';
-        while(!(UCSR0A&(1<<TXC0)));
-        UCSR0A |= (1<<TXC0);
-      }
-    }
+      */
   }
 }
 

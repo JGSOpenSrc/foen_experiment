@@ -4,7 +4,6 @@
 # camera branch
 # first commit to camera
 
->>>>>>> camera
 import sys
 import serial as s
 import threading
@@ -16,8 +15,7 @@ from threading import Thread
 
 class flowerController(Thread):
 
-	def __init__(self, port, accel_sample_freq,
-				 nectar_sample_freq):
+	def __init__(self, port, accel_sample_freq):
 		Thread.__init__(self)
 		# Declare filenames to write in output folder
 		self.Xfilename = "x_data.csv"
@@ -58,8 +56,6 @@ class flowerController(Thread):
 		self.running = False
 
 		self.accel_sample_freq = accel_sample_freq
-		self.nectar_sample_freq = nectar_sample_freq
-
 	def begin(self):
 		try:
 			# Open port at 1Mbit/sec
@@ -87,12 +83,9 @@ class flowerController(Thread):
 				self.Nfile = open(self.Nfilename, 'w')
 				self.Efile = open(self.Efilename, 'w')
 				self.Ifile = open(self.Ifilename, 'w')
+				self.raw_data = open(self.rawfilename, 'wb')
 				# Send samples rates and start command
-				self.ser.flushInput()
 				cmd = bytearray("{0}\n".format(self.accel_sample_freq), 'ascii')
-				self.ser.write(cmd)
-				sleep(1)
-				cmd = bytearray("{0}\n".format(self.nectar_sample_freq), 'ascii')
 				self.ser.write(cmd)
 				success = True
 			except BaseException:
@@ -103,6 +96,22 @@ class flowerController(Thread):
 		else:
 			self.running = False
 
+	"""
+	This function implements the running Loop of the
+	FlowerController thread. It waits for 3-byte frames
+	of data from the arduino and writes them to a separate
+	file based on the first byte, the code, of the data.
+	"""
+	def run(self):
+		self.begin()
+		self.ser.flushInput()
+		while self.running:
+			# Read 3-bytes from the serial port
+			while(self.ser.in_waiting):
+				data = self.ser.read(self.ser.in_waiting)
+				self.raw_data.write(data)
+		self.stop()
+
 	def stop(self):
 		# Assert Data Terminal Ready to reset Arduino
 		self.ser.dtr = True
@@ -110,21 +119,16 @@ class flowerController(Thread):
 		self.ser.dtr = False
 		# Close the port
 		self.ser.close()
-		# Close the output files
-		self.Xfile.close()
-		self.Yfile.close()
-		self.Zfile.close()
-		self.Nfile.close()
-		self.Efile.close()
-		self.Ifile.close()
+		# Unpack the data
+		self.unpack_data()
 		# Fix the time overflow issue
 		try:
+
 			update_time(self.Xfilename, 4 * self.accel_sample_freq)
 			update_time(self.Yfilename, 4 * self.accel_sample_freq)
 			update_time(self.Zfilename, 4 * self.accel_sample_freq)
-			update_time(self.Nfilename, self.nectar_sample_freq)
-			update_time(self.Efilename, 1)
-			update_time(self.Ifilename, 1)
+			update_time(self.Nfilename, 4 * self.accel_sample_freq)
+
 			pass
 		except OSError as e:
 			raise(e)
@@ -137,66 +141,95 @@ class flowerController(Thread):
 			filename.close()
 		except OSError as e:
 			raise(e)
+
 	"""
-	This function implements the running Loop of the
-	FlowerController thread. It waits for 3-byte frames
-	of data from the arduino and writes them to a separate
-	file based on the first byte, the code, of the data.
+	This function reads from the raw binary data file and separates each
+	data frame, where a frame consists of one read from each analog input channel
+	and its corresponding timestamp.
+
+	After collecting the frames, it will compute the amount of bytes lost in
+	transmission, and then write the data to appropriate files (one for each channel)
 	"""
-	def run(self):
-		self.begin()
-		while self.running:
-			data = ""
-			# Read 3-bytes from the serial port
-			data = self.ser.readline()
-			# Sometimes a value looks like EOL, in that case,
-			# read a nother value
-			if(2 == len(data)):
-				data = [data, self.ser.read(2)]
-			try:
-				# Test to make sure there is actual data to process
-				if(len(data)>0):
-					# if <code>: write data to file corresponding to <code>
-					if(ord('X') == data[0]):
-						val = str(data[1])
-						time = str(data[2])
-						line = "{0},{1}\n".format(val,time)
-						self.Xfile.write(line)
-					elif (ord('Y') == data[0]):
-						val = str(data[1])
-						time = str(data[2])
-						line = "{0},{1}\n".format(val,time)
-						self.Yfile.write(line)
-					elif (ord('Z') == data[0]):
-						val = str(data[1])
-						time = str(data[2])
-						line = "{0},{1}\n".format(val,time)
-						self.Zfile.write(line)
-					elif (ord('N') == data[0]):
-						val = str(data[1])
-						time = str(data[2])
-						line = "{0},{1}\n".format(val,time)
-						self.Nfile.write(line)
-					elif (ord('E') == data[0]):
-						val = str(data[1])
-						time = str(data[2])
-						line = "{0},{1}\n".format(val,time)
-						self.Efile.write(line)
-						if(1 == data[1]):
-							print("Nectar filled at time stamp {0}".format(time))
-						elif(0 == data[1]):
-							print("Nectar emptied at time stamp {0}".format(time))
-					elif (ord('I') == data[0]):
-						time = str(data[2])
-						line = ",{0}\n".format(time);
-						print("Injection requested at time stamp {0}".format(time))
-						self.Ifile.write(line)
-			except ValueError:
-				print("ValueError: junk data caught in flowerController.run()")
-		self.stop()
+	def unpack_data(self):
+		# Close the raw_data file, since it was open for writing previously
+		self.raw_data.close()
+		# Open the raw data file for reading
+		self.raw_data = open(self.rawfilename, 'rb')
+		data = bytearray()
+
+		# Iterate over the file, reading each byte and appending to an array
+		while True:
+			byte = self.raw_data.read(1)
+			if byte:
+				data += byte
+			else:
+				break
+
+		index = 0						# iteration index
+		frames = []						# Location of frames in the data array
+		while(index + 11 < len(data)):	# Verify that there is a full frame yet to be processed
+			if locate_frame(index,data):
+				frames.append(index)	# Append this index to a list of indexes pointing to valid frames
+				index += 12				# Increment by the size of one frame in bytes
+			else:
+				index += 1				# Increment by one byte
+
+		print("frame count", len(frames))
+		print("bytes received", len(data))
+		bytes_lost = len(data) - len(frames) * 12
+		print("bytes lost", bytes_lost)
+		print("loss ratio " + str(100 * bytes_lost / len(data)) + " percent" )
+
+		for frame in frames:
+			# Write the X value and timestamp to the CSV file
+			value = data[frame+1]
+			timestamp = data[frame+2]
+			line = "{0},{1}\n".format(value,timestamp)
+			self.Xfile.write(line)
+
+			# Write the Y value and timestamp to the CSV file
+			value = data[frame+4]
+			timestamp = data[frame+5]
+			line = "{0},{1}\n".format(value,timestamp)
+			self.Yfile.write(line)
+
+			# Write the Z value and timestamp to the CSV file
+			value = data[frame+7]
+			timestamp = data[frame+8]
+			line = "{0},{1}\n".format(value,timestamp)
+			self.Zfile.write(line)
+
+			# Write the N value and timestamp to the CSV file
+			value = data[frame + 10]
+			timestamp = data[frame + 11]
+			line = "{0},{1}\n".format(value,timestamp)
+			self.Nfile.write(line)
+
+		# Close the output files
+		self.Xfile.close()
+		self.Yfile.close()
+		self.Zfile.close()
+		self.Nfile.close()
+		self.Efile.close()
+		self.Ifile.close()
+
+def locate_frame(index,data):
+	if data[index] != ord("X"):
+		return False
+	elif data[index + 3] != ord("Y"):
+		return False
+	elif data[index + 6] != ord("Z"):
+		return False
+	elif data[index + 9] != ord("N"):
+		return False
+	else:
+		return True
+
+
 """
 This function is used to adjust the time stamps sent by
-the flower controller.
+the flower controller after the data has been unpacked and sorted
+into separate files.
 
 For example, the sequence of time stamps
 0, 1, ..., 2^16-1, 0, 1, ... 2^16-1 is converted into
@@ -252,25 +285,20 @@ def update_time(filename, frequency):
 	out_file.close()
 
 if __name__ == "__main__":
-	if(4 != len(sys.argv)):
+	if(3 != len(sys.argv)):
 		userError ="""
-		dataAcquisition.py requires three input arguments:
+		dataAcquisition.py requires two input arguments:
 
 		1) serial port device file
 		2) accellerometer sample rate (Hz) - must be a positive integer!
-		3) nectar sample rate (Hz) - must be a positive integer!
 
-		Example of use: python3 dataAcquisition.py /dev/ttyACM0 1000 100"""
+		Example of use: python3 dataAcquisition.py /dev/ttyACM0 1000"""
 		raise Exception(userError)
 		exit()
 	accel_sample_freq = int(sys.argv[2])
-	nectar_sample_freq = int(sys.argv[3])
 	actual_accel_freq = int(16000000/(16000000/accel_sample_freq - 1))
-	actual_nectar_freq = int(actual_accel_freq * nectar_sample_freq / accel_sample_freq)
-	print("Sample rates, {0}, {1}".format(actual_accel_freq, actual_nectar_freq))
-	f = flowerController(sys.argv[1],
-	 					 accel_sample_freq,
-						 nectar_sample_freq)
+	print("Sample rate, {0}".format(actual_accel_freq))
+	f = flowerController(sys.argv[1], accel_sample_freq)
 	input("enter anything to begin\n")
 	print("output is being written to " + f.folder)
 	f.start()
