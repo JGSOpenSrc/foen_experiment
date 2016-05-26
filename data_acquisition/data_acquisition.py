@@ -105,11 +105,36 @@ class flowerController(Thread):
 	def run(self):
 		self.begin()
 		self.ser.flushInput()
+		nectar_present = False
 		while self.running:
 			# Read 3-bytes from the serial port
 			while(self.ser.in_waiting):
-				data = self.ser.read(self.ser.in_waiting)
+				# Read two frames worth of data and write to raw file
+				data = self.ser.read(24)
 				self.raw_data.write(data)
+
+				# Parse the data for a nectar measurement
+				nectar_value = None
+				for i in range(len(data)):
+					# Check for the data code
+					if data[i] == ord('N') and i+1 in range(len(data)):
+						if i-3 in range(len(data)):
+							# Check to make sure that the previous value was from Z channel
+							if data[i-3] == ord('Z'):
+								nectar_value = data[i+1]
+								break
+						if i+3 in range(len(data)):
+							# Check to make sure that the following value is form X channel
+							if data[i+3] == ord('X'):
+								nectar_value = data[i+1]
+								break
+				# Determine the nectar state
+				if nectar_value is not None:
+					if nectar_present and nectar_value >= 150:
+						nectar_present = False
+					elif not nectar_present and nectar_value <= 75:
+						nectar_present = True
+
 		self.stop()
 
 	def stop(self):
